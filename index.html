@@ -72,8 +72,12 @@
         .btn-sync:hover { background: #1e4a6d; }
         .btn-secondary { background: white; border: 1.5px solid #b8cfdf; color: #1e4a6d; padding: 12px 26px; border-radius: 40px; font-weight: 500; cursor: pointer; transition: 0.15s; }
         .btn-secondary:hover { background: #e7f0f8; }
+        
+        /* NEW BUTTON STYLES */
         .btn-add { background: #1b6b3f; color: white; border: none; padding: 12px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 8px; }
         .btn-add:hover { background: #155231; }
+        .btn-remove { background: #b33a3a; color: white; border: none; padding: 12px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 8px; }
+        .btn-remove:hover { background: #8f2929; }
 
         .signoff-section { background: #f0f6fc; border-radius: 24px; padding: 26px 28px; margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border: 1px solid #cfe0ee; gap: 20px; }
         .signoff-left { display: flex; flex-direction: column; gap: 6px; }
@@ -130,7 +134,6 @@
                 <span class="sync-status" style="background:#e2f0e6; color:#1b6b3f; border-color:#b8dfc3; padding: 8px 20px; font-size: 1rem;">
                     🔒 <span id="lockedTechName">—</span>
                 </span>
-                <!-- RESTORED THIS HIDDEN SELECT SO THE JAVASCRIPT DOESN'T CRASH -->
                 <select id="technicianSelect" style="display:none;">
                     <option value="Hillaly KUBWIMANA">Hillaly KUBWIMANA</option>
                     <option value="YANDEREYE Felecien">YANDEREYE Felecien</option>
@@ -163,6 +166,7 @@
                 <!-- Populated via JavaScript -->
             </select>
             <button id="addAcBtn" class="btn-add">➕ Add New AC</button>
+            <button id="removeAcBtn" class="btn-remove">➖ Remove AC</button> <!-- NEW REMOVE BUTTON -->
             <img src="chub-logo.png" alt="CHUB Logo" class="chub-logo" onerror="this.style.display='none'">
         </div>
 
@@ -301,7 +305,6 @@
 
             <div class="field-group" style="text-align: left;">
                 <label for="loginPinInput">Your PIN</label>
-                <!-- REMOVED THE ONKEYPRESS HERE TO PREVENT DOUBLE-TRIGGER -->
                 <input type="password" id="loginPinInput" inputmode="numeric" maxlength="8" placeholder="••••" style="text-align: center; font-size: 1.5rem; letter-spacing: 8px;">
             </div>
 
@@ -455,6 +458,15 @@
 
             function renderAcSelector() {
                 acSelect.innerHTML = '';
+                if (AC_INVENTORY.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = '— No AC Units Available —';
+                    acSelect.appendChild(opt);
+                    acTitle.textContent = 'No AC Units Added';
+                    acSub.textContent = 'Please add a new AC unit.';
+                    return;
+                }
                 AC_INVENTORY.forEach((ac, index) => {
                     const opt = document.createElement('option');
                     opt.value = index;
@@ -517,11 +529,40 @@
             });
 
             // ============================================================
+            // ➖ REMOVE AC LOGIC
+            // ============================================================
+            document.getElementById('removeAcBtn').addEventListener('click', () => {
+                const idx = acSelect.value;
+                if (idx === '' || !AC_INVENTORY[idx]) {
+                    showStatus('⚠️ No AC unit selected to remove.', false);
+                    return;
+                }
+
+                const ac = AC_INVENTORY[idx];
+                const confirmMsg = `Are you sure you want to remove:\n\n${ac.tag} — ${ac.loc}\n(${ac.brand} ${ac.model})\n\nThis action cannot be undone.`;
+                
+                if (confirm(confirmMsg)) {
+                    AC_INVENTORY.splice(idx, 1);
+                    saveInventory(AC_INVENTORY);
+                    renderAcSelector();
+                    
+                    if (AC_INVENTORY.length === 0) {
+                        acTitle.textContent = 'No AC Units Added';
+                        acSub.textContent = 'Please add a new AC unit.';
+                    } else {
+                        acSelect.selectedIndex = 0;
+                        updateAcBanner();
+                    }
+                    showStatus('🗑️ AC Unit removed successfully!', true);
+                }
+            });
+
+            // ============================================================
             // 👨‍🔧 TECHNICIAN DISPLAY
             // ============================================================
             const technicianSelect = document.getElementById('technicianSelect');
             function updateTechnicianDisplay() {
-                if (!technicianSelect) return; // Safety check
+                if (!technicianSelect) return;
                 const name = technicianSelect.value;
                 document.getElementById('signoffTechName').textContent = name;
                 const initials = name ? name.split(' ').map(p => p[0]).join('') + '.' : '—';
@@ -674,7 +715,7 @@
                 document.querySelectorAll('input[type="text"], input[type="number"]').forEach(inp => inp.value = '');
                 document.querySelectorAll('input[type="radio"]').forEach(rb => rb.checked = false);
                 document.querySelectorAll('input[type="radio"][value="good"]').forEach(rb => rb.checked = true);
-                acSelect.selectedIndex = 0;
+                if (AC_INVENTORY.length > 0) acSelect.selectedIndex = 0;
                 updateAcBanner();
                 updateTechnicianDisplay();
                 setAutoWorkDate();
@@ -836,7 +877,7 @@ ${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainag
             function clearSession() { try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {} }
 
             function unlockApp(name) {
-                if (technicianSelect) technicianSelect.value = name; // Safety check added
+                if (technicianSelect) technicianSelect.value = name;
                 document.getElementById('loggedInUserName').textContent = name;
                 document.getElementById('lockedTechName').textContent = name;
                 updateTechnicianDisplay();
@@ -907,7 +948,7 @@ ${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainag
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=5')
+                navigator.serviceWorker.register('sw.js?v=6') // Updated to v6 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
