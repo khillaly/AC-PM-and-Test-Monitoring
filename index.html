@@ -322,7 +322,7 @@
     <div class="modal-overlay" id="addAcModal">
         <div class="modal-box">
             <h2>➕ Add New AC Unit</h2>
-            <p>This AC will be added to <strong>your personal list</strong>. Only you can see it when you log in.</p>
+            <p>This AC will be saved to the cloud under your name: <strong id="addAcOwnerName">—</strong></p>
             
             <div class="grid-3-wide" style="grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div class="field-group">
@@ -369,7 +369,7 @@
 
             <div class="modal-actions">
                 <button class="btn-cancel" id="addAcCancel">Cancel</button>
-                <button class="btn-go" id="addAcSave">💾 Save AC</button>
+                <button class="btn-go" id="addAcSave">💾 Save AC to Cloud</button>
             </div>
         </div>
     </div>
@@ -390,11 +390,10 @@
                 'GATANGANWA Raissa':      '0401'
             };
 
-            // The technician who gets the default AC list (from your images)
             const DEFAULT_LIST_OWNER = 'Hillaly KUBWIMANA';
 
             // ============================================================
-            // 📋 DEFAULT AC INVENTORY (only given to DEFAULT_LIST_OWNER)
+            // 📋 DEFAULT AC INVENTORY (only for DEFAULT_LIST_OWNER on first login)
             // ============================================================
             const DEFAULT_AC_INVENTORY = [
                 { tag: 'CHUB/MCH NBM/262', dept: 'Laboratory', loc: 'Stock Consumables', type: 'Split', brand: 'Kanion', model: 'KCC-18R4100CF', serial: '340B408220308280170001' },
@@ -421,40 +420,41 @@
                 { tag: 'N/A', dept: 'Laboratory', loc: 'Hematology', type: 'Split', brand: 'Carrier', model: '38QHG024D85', serial: '54CQ6164440649120120061' }
             ];
 
+            // Local cache key (fallback if offline)
+            const CACHE_KEY_PREFIX = 'chub_ac_cache_v1_';
+            function getCacheKey(techName) { return CACHE_KEY_PREFIX + (techName || 'default').replace(/\s+/g, '_'); }
+
+            function cacheInventoryLocally(techName, inv) {
+                try { localStorage.setItem(getCacheKey(techName), JSON.stringify(inv)); } catch(e) {}
+            }
+            function loadCachedInventory(techName) {
+                try { const raw = localStorage.getItem(getCacheKey(techName)); return raw ? JSON.parse(raw) : null; } catch(e) { return null; }
+            }
+
             // ============================================================
-            // 💾 PER-TECHNICIAN LOCAL STORAGE
+            // ☁️ CLOUD SYNC FUNCTIONS
             // ============================================================
-            // Each technician has his own inventory key: chub_ac_inventory_v3_<name>
-            const INVENTORY_KEY_PREFIX = 'chub_ac_inventory_v3_';
-
-            function getInventoryKey(techName) {
-                return INVENTORY_KEY_PREFIX + (techName || 'default').replace(/\s+/g, '_');
+            async function fetchInventoryFromCloud(techName) {
+                const res = await fetch(GOOGLE_SHEET_URL + '?type=inventory&tech=' + encodeURIComponent(techName), { method: 'GET' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const json = await res.json();
+                return json.records || [];
             }
 
-            function loadInventoryForTech(techName) {
-                if (!techName) return [];
-                try {
-                    const saved = localStorage.getItem(getInventoryKey(techName));
-                    if (saved) return JSON.parse(saved);
-                } catch(e) { console.warn('Failed to load inventory for', techName); }
-                
-                // First-time login for this technician
-                if (techName === DEFAULT_LIST_OWNER) {
-                    // Give Hillaly the default list from the images
-                    saveInventoryForTech(techName, DEFAULT_AC_INVENTORY);
-                    return DEFAULT_AC_INVENTORY.slice();
-                }
-                // All other technicians start with an empty list
-                return [];
+            async function pushInventoryToCloud(techName, inv) {
+                const payload = {
+                    action: 'inventory_update',
+                    technician: techName,
+                    inventory: inv
+                };
+                await fetch(GOOGLE_SHEET_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                return true;
             }
-
-            function saveInventoryForTech(techName, inv) {
-                if (!techName) return;
-                localStorage.setItem(getInventoryKey(techName), JSON.stringify(inv));
-            }
-
-            // AC_INVENTORY belongs to whoever is currently logged in
-            let AC_INVENTORY = [];
 
             // ============================================================
             // 🛠️ HELPERS
@@ -466,11 +466,11 @@
                 statusMessage.style.background = isSuccess ? '#e2f0e6' : '#ffe6e6';
                 statusMessage.style.color = isSuccess ? '#1b6b3f' : '#b33a3a';
                 statusMessage.classList.add('show');
-                setTimeout(() => statusMessage.classList.remove('show'), 6000);
+                setTimeout(() => statusMessage.classList.remove('show'), 7000);
             }
 
             // ============================================================
-            // 🏷️ POPULATE AC SELECTOR
+            // 🏷️ AC SELECTOR
             // ============================================================
             const acSelect = document.getElementById('acSelect');
             const acTitle = document.getElementById('acTitle');
@@ -510,17 +510,18 @@
             acSelect.addEventListener('change', updateAcBanner);
 
             // ============================================================
-            // ➕ ADD NEW AC LOGIC (saves to the logged-in technician only)
+            // ➕ ADD NEW AC LOGIC (saves to cloud)
             // ============================================================
             const addAcModal = document.getElementById('addAcModal');
             document.getElementById('addAcBtn').addEventListener('click', () => {
+                document.getElementById('addAcOwnerName').textContent = technicianSelect.value || '—';
                 addAcModal.classList.add('show');
             });
             document.getElementById('addAcCancel').addEventListener('click', () => {
                 addAcModal.classList.remove('show');
             });
 
-            document.getElementById('addAcSave').addEventListener('click', () => {
+            document.getElementById('addAcSave').addEventListener('click', async () => {
                 const tag = document.getElementById('newAcTag').value.trim();
                 const dept = document.getElementById('newAcDept').value.trim() || 'Laboratory';
                 const loc = document.getElementById('newAcLocation').value.trim();
@@ -535,18 +536,26 @@
                 }
 
                 const ownerTech = technicianSelect.value;
-                if (!ownerTech) {
-                    alert('You must be logged in to add an AC unit.');
-                    return;
-                }
+                if (!ownerTech) { alert('You must be logged in to add an AC unit.'); return; }
+
+                const saveBtn = document.getElementById('addAcSave');
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '⏳ Saving to cloud...';
 
                 const newAc = { tag, dept, loc, type, brand, model, serial };
                 AC_INVENTORY.push(newAc);
-                saveInventoryForTech(ownerTech, AC_INVENTORY);
-                
-                renderAcSelector();
-                acSelect.value = AC_INVENTORY.length - 1;
-                updateAcBanner();
+
+                try {
+                    await pushInventoryToCloud(ownerTech, AC_INVENTORY);
+                    cacheInventoryLocally(ownerTech, AC_INVENTORY);
+                    renderAcSelector();
+                    acSelect.value = AC_INVENTORY.length - 1;
+                    updateAcBanner();
+                    showStatus('✅ AC saved to cloud for ' + ownerTech, true);
+                } catch (err) {
+                    cacheInventoryLocally(ownerTech, AC_INVENTORY);
+                    showStatus('⚠️ Saved locally, will sync when online.', false);
+                }
 
                 document.getElementById('newAcTag').value = '';
                 document.getElementById('newAcLocation').value = '';
@@ -554,14 +563,14 @@
                 document.getElementById('newAcModel').value = '';
                 document.getElementById('newAcSerial').value = '';
                 addAcModal.classList.remove('show');
-                
-                showStatus('✅ New AC Unit added to ' + ownerTech + "'s personal list!", true);
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '💾 Save AC to Cloud';
             });
 
             // ============================================================
-            // ➖ REMOVE AC LOGIC (only removes from logged-in technician's list)
+            // ➖ REMOVE AC LOGIC (saves to cloud)
             // ============================================================
-            document.getElementById('removeAcBtn').addEventListener('click', () => {
+            document.getElementById('removeAcBtn').addEventListener('click', async () => {
                 const ownerTech = technicianSelect.value;
                 const idx = acSelect.value;
                 if (idx === '' || !AC_INVENTORY[idx]) {
@@ -570,21 +579,26 @@
                 }
 
                 const ac = AC_INVENTORY[idx];
-                const confirmMsg = `Are you sure you want to remove:\n\n${ac.tag} — ${ac.loc}\n(${ac.brand} ${ac.model})\n\nThis will remove it from YOUR personal list only.`;
-                
-                if (confirm(confirmMsg)) {
-                    AC_INVENTORY.splice(idx, 1);
-                    saveInventoryForTech(ownerTech, AC_INVENTORY);
-                    renderAcSelector();
-                    
-                    if (AC_INVENTORY.length === 0) {
-                        acTitle.textContent = 'No AC Units Yet';
-                        acSub.textContent = 'Click "➕ Add New AC" to start your personal list.';
-                    } else {
-                        acSelect.selectedIndex = 0;
-                        updateAcBanner();
-                    }
-                    showStatus('🗑️ AC Unit removed from your personal list!', true);
+                if (!confirm(`Remove this AC from your cloud list?\n\n${ac.tag} — ${ac.loc}\n(${ac.brand} ${ac.model})`)) return;
+
+                AC_INVENTORY.splice(idx, 1);
+
+                try {
+                    await pushInventoryToCloud(ownerTech, AC_INVENTORY);
+                    cacheInventoryLocally(ownerTech, AC_INVENTORY);
+                    showStatus('🗑️ AC removed from cloud.', true);
+                } catch (err) {
+                    cacheInventoryLocally(ownerTech, AC_INVENTORY);
+                    showStatus('⚠️ Removed locally — will sync when online.', false);
+                }
+
+                renderAcSelector();
+                if (AC_INVENTORY.length === 0) {
+                    acTitle.textContent = 'No AC Units Yet';
+                    acSub.textContent = 'Click "➕ Add New AC" to start your personal list.';
+                } else {
+                    acSelect.selectedIndex = 0;
+                    updateAcBanner();
                 }
             });
 
@@ -622,7 +636,7 @@
             }
 
             // ============================================================
-            // 💾 LOCAL QUEUE & GOOGLE SHEETS SYNC
+            // 💾 QUEUE & SYNC
             // ============================================================
             const QUEUE_KEY = 'chub_ac_queue';
             function getQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch(e) { return []; } }
@@ -686,9 +700,7 @@
             function collectFormData() {
                 const idx = acSelect.value;
                 const ac = AC_INVENTORY[idx];
-                if (!ac) {
-                    return null;
-                }
+                if (!ac) return null;
                 const now = new Date();
                 const timestamp = now.toLocaleString('en-GB', { hour12: false, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                 
@@ -730,19 +742,14 @@
             // ============================================================
             document.getElementById('signOffBtn').addEventListener('click', async function() {
                 const data = collectFormData();
-                if (!data) {
-                    showStatus('⚠️ Please add an AC unit to your list before signing off.', false);
-                    return;
-                }
+                if (!data) { showStatus('⚠️ Please add an AC unit before signing off.', false); return; }
                 this.disabled = true;
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Sending...';
                 const success = await queueAndSend(data);
                 this.disabled = false;
                 this.innerHTML = orig;
-                if (success) {
-                    setTimeout(() => resetForm(false), 1500);
-                }
+                if (success) setTimeout(() => resetForm(false), 1500);
             });
 
             // ============================================================
@@ -763,14 +770,11 @@
             document.getElementById('resetBtn').addEventListener('click', () => resetForm(true));
 
             // ============================================================
-            // 📄 EXPORT CURRENT AS PDF (Single Record)
+            // 📄 EXPORT CURRENT AS PDF
             // ============================================================
             document.getElementById('pdfBtn').addEventListener('click', function() {
                 const data = collectFormData();
-                if (!data) {
-                    showStatus('⚠️ Please add an AC unit to your list first.', false);
-                    return;
-                }
+                if (!data) { showStatus('⚠️ Please add an AC unit first.', false); return; }
                 this.disabled = true;
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Preparing PDF...';
@@ -779,26 +783,16 @@
                 const iframe = document.createElement('iframe');
                 iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
                 document.body.appendChild(iframe);
-
                 iframe.onload = function() {
-                    try {
-                        iframe.contentWindow.focus();
-                        iframe.contentWindow.print();
-                        showStatus('📄 PDF dialog opened — choose "Save as PDF".', true);
-                    } catch(e) {
-                        showStatus('⚠️ Could not open print dialog.', false);
-                    }
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                        document.getElementById('pdfBtn').disabled = false;
-                        document.getElementById('pdfBtn').innerHTML = orig;
-                    }, 1500);
+                    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); showStatus('📄 PDF opened — choose "Save as PDF".', true); }
+                    catch(e) { showStatus('⚠️ Could not open print dialog.', false); }
+                    setTimeout(() => { document.body.removeChild(iframe); document.getElementById('pdfBtn').disabled = false; document.getElementById('pdfBtn').innerHTML = orig; }, 1500);
                 };
                 iframe.srcdoc = reportHTML;
             });
 
             // ============================================================
-            // 📚 DOWNLOAD MY PMs AS PDF (FROM GOOGLE SHEET, FILTERED BY USER)
+            // 📚 DOWNLOAD MY PMs (CLOUD, FILTERED BY USER)
             // ============================================================
             document.getElementById('historyPdfBtn').addEventListener('click', async function() {
                 this.disabled = true;
@@ -807,59 +801,28 @@
 
                 try {
                     const currentTech = technicianSelect.value;
-                    if (!currentTech) {
-                        showStatus('⚠️ You must be logged in to download your PMs.', false);
-                        this.disabled = false;
-                        this.innerHTML = orig;
-                        return;
-                    }
+                    if (!currentTech) { showStatus('⚠️ You must be logged in.', false); this.disabled = false; this.innerHTML = orig; return; }
 
-                    const res = await fetch(GOOGLE_SHEET_URL, { method: 'GET' });
-                    if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
-                    
+                    const res = await fetch(GOOGLE_SHEET_URL + '?type=logs', { method: 'GET' });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
                     const json = await res.json();
                     if (json.status === 'error') throw new Error(json.message);
-                    
-                    if (!json.records || json.records.length === 0) {
-                        showStatus('📭 No records found in the Google Sheet.', false);
-                        this.disabled = false;
-                        this.innerHTML = orig;
-                        return;
-                    }
+                    if (!json.records || json.records.length === 0) { showStatus('📭 No records in the Google Sheet.', false); this.disabled = false; this.innerHTML = orig; return; }
 
-                    // FILTER: Only keep records belonging to the logged-in technician
                     const myRecords = json.records.filter(r => r.technician === currentTech);
-
-                    if (myRecords.length === 0) {
-                        showStatus('📭 No PM history found for ' + currentTech + ' yet.', false);
-                        this.disabled = false;
-                        this.innerHTML = orig;
-                        return;
-                    }
+                    if (myRecords.length === 0) { showStatus('📭 No PM history for ' + currentTech + ' yet.', false); this.disabled = false; this.innerHTML = orig; return; }
 
                     this.innerHTML = '<span>⏳</span> Preparing ' + myRecords.length + ' PDFs...';
                     const reportHTML = buildReportHTML(myRecords);
-                    
                     const iframe = document.createElement('iframe');
                     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
                     document.body.appendChild(iframe);
-
                     iframe.onload = function() {
-                        try {
-                            iframe.contentWindow.focus();
-                            iframe.contentWindow.print();
-                            showStatus('📄 PDF dialog opened — choose "Save as PDF".', true);
-                        } catch(e) {
-                            showStatus('⚠️ Could not open print dialog.', false);
-                        }
-                        setTimeout(() => {
-                            document.body.removeChild(iframe);
-                            document.getElementById('historyPdfBtn').disabled = false;
-                            document.getElementById('historyPdfBtn').innerHTML = orig;
-                        }, 1500);
+                        try { iframe.contentWindow.focus(); iframe.contentWindow.print(); showStatus('📄 PDF opened — choose "Save as PDF".', true); }
+                        catch(e) { showStatus('⚠️ Could not open print dialog.', false); }
+                        setTimeout(() => { document.body.removeChild(iframe); document.getElementById('historyPdfBtn').disabled = false; document.getElementById('historyPdfBtn').innerHTML = orig; }, 1500);
                     };
                     iframe.srcdoc = reportHTML;
-
                 } catch (err) {
                     console.error(err);
                     showStatus('⚠️ Could not load records: ' + err.message, false);
@@ -887,9 +850,7 @@
                 function formatDateForPDF(dateVal) {
                     if (!dateVal) return '—';
                     if (Array.isArray(dateVal)) dateVal = dateVal[0];
-                    if (typeof dateVal === 'string' && dateVal.includes('T')) {
-                        dateVal = dateVal.split('T')[0];
-                    }
+                    if (typeof dateVal === 'string' && dateVal.includes('T')) dateVal = dateVal.split('T')[0];
                     if (typeof dateVal === 'string' && dateVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
                         const d = new Date(dateVal + 'T00:00:00');
                         return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -908,10 +869,8 @@
                 };
 
                 let pagesHtml = '';
-                
-                dataArray.forEach((data, index) => {
+                dataArray.forEach((data) => {
                     const initials = (data.technician || 'HK').split(' ').map(p => p[0]).join('') + '.';
-                    
                     pagesHtml += `
                     <div class="report-page">
                         <div class="header">
@@ -925,51 +884,34 @@
                             <div><strong>Generated:</strong> ${data.generatedAt}</div>
                           </div>
                         </div>
-
                         <div class="gen-banner">
                           <div class="gen-name">${data.acTag} — ${data.acLocation}</div>
                           <div class="gen-sub">${data.acBrand} · ${data.acModel} · SN: ${data.acSerial}</div>
                         </div>
-
                         <div class="section-title">🌬️ Filters, Coils & Airflow</div>
                         <div class="rating-tag">Condition: ${data.airflowRating}</div>
                         <ul class="check-list">
                         ${checkList(safeSplit(data.airflowItems, '|'), [
-                            'Inspect, clean, or replace filters',
-                            'Clean indoor evaporator coil',
-                            'Clean outdoor condenser coil',
-                            'Check blower motor and wheel',
-                            'Verify proper airflow across unit'
+                            'Inspect, clean, or replace filters','Clean indoor evaporator coil','Clean outdoor condenser coil','Check blower motor and wheel','Verify proper airflow across unit'
                         ])}
                         </ul>
                         ${data.airflowRemark !== '—' ? '<div class="remark-box">📝 ' + data.airflowRemark + '</div>' : ''}
-
                         <div class="section-title">⚡ Electrical & Refrigerant</div>
                         <div class="rating-tag">Status: ${data.electricalRating}</div>
                         <ul class="check-list">
                         ${checkList(safeSplit(data.electricalItems, '|'), [
-                            'Verify correct refrigerant charge (superheat/subcooling)',
-                            'Tighten and inspect electrical connections',
-                            'Test relays, contactors, and capacitors',
-                            'Measure compressor and fan motor amps',
-                            'Inspect wiring for frays or heat damage'
+                            'Verify correct refrigerant charge (superheat/subcooling)','Tighten and inspect electrical connections','Test relays, contactors, and capacitors','Measure compressor and fan motor amps','Inspect wiring for frays or heat damage'
                         ])}
                         </ul>
                         ${data.electricalRemark !== '—' ? '<div class="remark-box">📝 ' + data.electricalRemark + '</div>' : ''}
-
                         <div class="section-title">💧 Drainage, Controls & Performance</div>
                         <div class="rating-tag">Performance: ${data.drainageRating}</div>
                         <ul class="check-list">
                         ${checkList(safeSplit(data.drainageItems, '|'), [
-                            'Clear condensate drain line and pan',
-                            'Check thermostat calibration and controls',
-                            'Measure supply/return air temperatures',
-                            'Verify overall system efficiency',
-                            'Inspect ductwork for leaks (visible)'
+                            'Clear condensate drain line and pan','Check thermostat calibration and controls','Measure supply/return air temperatures','Verify overall system efficiency','Inspect ductwork for leaks (visible)'
                         ])}
                         </ul>
                         ${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainageRemark + '</div>' : ''}
-
                         <div class="signoff-block">
                           <div>
                             <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; color:#5b7b96; font-weight:700; margin-bottom:2px;">Signed off by</div>
@@ -978,7 +920,6 @@
                           </div>
                           <div class="signature">${initials}</div>
                         </div>
-
                         <div class="footer-text-block">
                             This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
                         </div>
@@ -992,7 +933,6 @@
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; font-size: 10pt; line-height: 1.35; }
-
 .header { border-bottom: 3px solid #1e4a6d; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
 .header h1 { font-size: 1.25rem; color: #12405e; letter-spacing: -0.3px; }
 .header .sub { font-size: 0.85rem; color: #3a6583; margin-top: 3px; }
@@ -1009,12 +949,10 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 .signoff-block .tech-name { font-size: 1.05rem; font-weight: 700; color: #0a2a3f; }
 .signature { font-family: 'Segoe UI', cursive; font-size: 1.1rem; color: #1e4a6d; border-bottom: 2px dashed #9cb9d0; padding: 0 16px 3px 16px; }
 .footer-text-block { text-align: center; font-size: 9px; color: #5b7b96; margin-top: 15px; padding-top: 5px; border-top: 1px solid #d4e3ef; }
-
 .header-img { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #6a8db0; padding-bottom: 10px; margin-bottom: 15px; }
 .header-img img { height: 55px; object-fit: contain; }
 .header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
 .footer-bar { background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
-
 @media print {
     @page { margin: 0; }
     body { margin: 0; padding: 26mm 15mm 24mm 15mm; }
@@ -1038,28 +976,24 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
     .footer-text-block { margin-top: 8px; font-size: 8px; padding-top: 4px; }
 }
 </style></head><body>
-
 <div class="header-img">
     <img src="chub-logo.png" alt="CHUB Logo" style="height: 55px; object-fit: contain;">
     <span class="domain">chub.rw</span>
 </div>
-
 ${pagesHtml}
-
 <div class="footer-img">
     <div class="footer-bar">
         <span>P.O Box: 254 Butare</span> | <span>Email: info@chub.rw</span> | <span>Hotline: 2030</span>
     </div>
 </div>
-
 </body></html>`;
             }
 
             // ============================================================
-            // 🔐 PIN AUTHENTICATION
+            // 🔐 PIN AUTHENTICATION + CLOUD LOAD
             // ============================================================
             const SESSION_KEY = 'chub_ac_session';
-            function saveSession(name) { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name: name, time: Date.now() })); } catch(e) {} }
+            function saveSession(name) { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, time: Date.now() })); } catch(e) {} }
             function loadSession() {
                 try {
                     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -1071,21 +1005,48 @@ ${pagesHtml}
             }
             function clearSession() { try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {} }
 
-            function unlockApp(name) {
+            async function unlockApp(name) {
                 if (technicianSelect) technicianSelect.value = name;
                 document.getElementById('loggedInUserName').textContent = name;
                 document.getElementById('lockedTechName').textContent = name;
-
-                // ⭐ NEW: Load this technician's personal AC inventory
-                AC_INVENTORY = loadInventoryForTech(name);
-                renderAcSelector();
-
                 updateTechnicianDisplay();
                 document.getElementById('loginModal').classList.remove('show');
+
+                // Load inventory from cloud
+                AC_INVENTORY = [];
+                renderAcSelector();
+                showStatus('⏳ Loading your AC list from cloud...', true);
+
+                try {
+                    let inv = await fetchInventoryFromCloud(name);
+
+                    // First-time setup for the default owner
+                    if (inv.length === 0 && name === DEFAULT_LIST_OWNER) {
+                        inv = DEFAULT_AC_INVENTORY.slice();
+                        await pushInventoryToCloud(name, inv);
+                    }
+
+                    AC_INVENTORY = inv;
+                    cacheInventoryLocally(name, inv);
+                    renderAcSelector();
+                    showStatus('✅ Welcome, ' + name + '! ' + inv.length + ' AC unit(s) loaded from cloud.', true);
+                } catch (err) {
+                    console.warn('Cloud load failed, using local cache:', err);
+                    const cached = loadCachedInventory(name) || [];
+                    AC_INVENTORY = cached;
+                    renderAcSelector();
+                    if (cached.length > 0) {
+                        showStatus('📥 Offline — loaded ' + cached.length + ' AC(s) from local cache.', false);
+                    } else {
+                        showStatus('⚠️ Could not load AC list. Please check your connection.', false);
+                    }
+                }
             }
+
             function lockApp() {
                 clearSession();
                 AC_INVENTORY = [];
+                renderAcSelector();
                 document.getElementById('loginModal').classList.add('show');
                 document.getElementById('loginPinInput').value = '';
                 document.getElementById('loginError').textContent = '';
@@ -1103,26 +1064,19 @@ ${pagesHtml}
 
                     if (!name) { errorEl.textContent = '⚠️ Please select your name.'; return; }
                     if (!pin) { errorEl.textContent = '⚠️ Please enter your PIN.'; return; }
-
                     if (TECHNICIAN_PINS[name] !== pin) {
                         errorEl.textContent = '❌ Wrong PIN for ' + name;
                         document.getElementById('loginPinInput').value = '';
                         document.getElementById('loginPinInput').focus();
                         return;
                     }
-                    
                     saveSession(name);
                     unlockApp(name);
-                    const acCount = AC_INVENTORY.length;
-                    showStatus('✅ Welcome, ' + name + '! You have ' + acCount + ' AC unit(s) in your list.', true);
                 });
             }
 
             document.getElementById('loginPinInput').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    loginBtn.click();
-                }
+                if (e.key === 'Enter') { e.preventDefault(); loginBtn.click(); }
             });
 
             document.getElementById('logoutBtn').addEventListener('click', function() {
@@ -1130,10 +1084,10 @@ ${pagesHtml}
             });
 
             const existingSession = loadSession();
-            if (existingSession && TECHNICIAN_PINS[existingSession]) { 
-                unlockApp(existingSession); 
-            } else { 
-                lockApp(); 
+            if (existingSession && TECHNICIAN_PINS[existingSession]) {
+                unlockApp(existingSession);
+            } else {
+                lockApp();
             }
 
             // ============================================================
@@ -1141,17 +1095,15 @@ ${pagesHtml}
             // ============================================================
             document.getElementById('workDate').addEventListener('change', updateWorkDateDisplay);
             document.getElementById('syncBtn').addEventListener('click', flushQueue);
-
             setAutoWorkDate();
             updatePendingCount();
             setTimeout(() => { if (getQueue().length > 0) flushQueue(); }, 1200);
-
         })();
     </script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=15') // Updated to v15 to force refresh
+                navigator.serviceWorker.register('sw.js?v=16')
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
