@@ -422,7 +422,8 @@
             // ============================================================
             // 💾 LOCAL STORAGE FOR AC INVENTORY
             // ============================================================
-            const INVENTORY_KEY = 'chub_ac_inventory';
+            // UPDATED KEY (v2) to force browser to load the corrected tags
+            const INVENTORY_KEY = 'chub_ac_inventory_v2';
             const HISTORY_KEY = 'chub_ac_pm_history';
 
             function loadInventory() {
@@ -718,7 +719,6 @@
                 this.innerHTML = '<span>⏳</span> Sending...';
                 const data = collectFormData();
                 
-                // SAVE TO LOCAL HISTORY
                 addToHistory(data);
 
                 const success = await queueAndSend(data);
@@ -769,7 +769,7 @@
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Preparing PDF...';
 
-                const reportHTML = buildReportHTML([data]); // Wrap in array for generic builder
+                const reportHTML = buildReportHTML([data]);
                 const iframe = document.createElement('iframe');
                 iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
                 document.body.appendChild(iframe);
@@ -830,7 +830,6 @@
             // 📄 PDF BUILDER (Handles Single or Multiple Records)
             // ============================================================
             function buildReportHTML(records) {
-                // Ensure we always work with an array
                 const dataArray = Array.isArray(records) ? records : [records];
                 
                 const checkList = (ids, allItems) => {
@@ -1037,7 +1036,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=7') // Updated to v7 to force refresh
+                navigator.serviceWorker.register('sw.js?v=8') // Updated to v8 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
