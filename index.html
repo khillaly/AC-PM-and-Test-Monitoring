@@ -835,7 +835,7 @@
                             <span class="domain">chub.rw</span>
                         </div>
 
-                        <div class="header" style="margin-top: 15px;">
+                        <div class="header">
                           <div>
                             <h1>❄️ AC Fleet — Preventive Maintenance Report</h1>
                             <div class="sub">Site: CHUB · Split Units · PM Checklist</div>
@@ -913,14 +913,14 @@
 <style>
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; padding: 0 4px; font-size: 10pt; line-height: 1.35; }
+body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; font-size: 10pt; line-height: 1.35; }
 
 /* NEW HEADER & FOOTER STYLES */
 .header-img { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #6a8db0; padding-bottom: 10px; margin-bottom: 15px; }
 .header-img img { height: 55px; object-fit: contain; }
 .header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
 
-.footer-img { position: fixed; bottom: 0; left: 0; right: 0; background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
+.footer-img { background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
 
 /* PAGE BREAK HANDLING */
 .report-page { margin-bottom: 0; page-break-inside: avoid; }
@@ -943,9 +943,11 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 /* HIDE BROWSER DEFAULT HEADERS/FOOTERS (Image 3) */
 @media print {
     @page { margin: 0; }
-    body { margin: 15mm 15mm 25mm 15mm; }
-    .header-img { position: fixed; top: 0; left: 0; right: 0; }
-    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; }
+    body { margin: 0; padding: 25mm 15mm 25mm 15mm; } /* Push content below fixed header */
+    .header-img { position: fixed; top: 0; left: 0; right: 0; height: 20mm; background: white; padding: 5mm 15mm 0 15mm; z-index: 1000; }
+    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; height: 15mm; background: #6a8db0; padding: 4mm 15mm; z-index: 1000; }
+    .report-page { page-break-inside: avoid; page-break-after: always; }
+    .report-page:last-child { page-break-after: auto; }
 }
 </style></head><body>
 ${pagesHtml}
@@ -1040,7 +1042,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=10') // Updated to v10 to force refresh
+                navigator.serviceWorker.register('sw.js?v=11') // Updated to v11 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
