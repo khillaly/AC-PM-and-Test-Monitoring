@@ -377,7 +377,7 @@
     <script>
         (function() {
             // 🔗 REPLACE THIS WITH YOUR NEW GOOGLE APPS SCRIPT URL
-            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/library/d/1oHYehcloktv5bIccpoQi3z10Vn78LSSi3rXiAxDTbgJeX34qnmX7-au_/2';
+            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzq9Np0rhHJl0W9T4IhMaazb_5JHyUBfYmhWMLL2ny3HuQtRE-XkFZFcRskvHUA9Q6D/exec';
 
             // ============================================================
             // 🔐 TECHNICIAN PINs
@@ -775,7 +775,10 @@
                     }
 
                     const res = await fetch(GOOGLE_SHEET_URL, { method: 'GET' });
+                    if (!res.ok) throw new Error('Network response was not ok: ' + res.status);
+                    
                     const json = await res.json();
+                    if (json.status === 'error') throw new Error(json.message);
                     
                     if (!json.records || json.records.length === 0) {
                         showStatus('📭 No records found in the Google Sheet.', false);
@@ -1070,7 +1073,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=12') // Updated to v12 to force refresh
+                navigator.serviceWorker.register('sw.js?v=13') // Updated to v13 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
