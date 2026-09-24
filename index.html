@@ -68,12 +68,13 @@
         .btn-primary:hover { background: #0f3852; transform: scale(1.01); }
         .btn-pdf { background: #b33a3a; color: white; border: none; padding: 16px 36px; border-radius: 40px; font-weight: 600; font-size: 1.1rem; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 12px; box-shadow: 0 10px 18px -8px rgba(150,40,40,0.3); }
         .btn-pdf:hover { background: #8f2929; transform: scale(1.01); }
+        .btn-pdf-all { background: #7a4c9c; color: white; border: none; padding: 16px 36px; border-radius: 40px; font-weight: 600; font-size: 1.1rem; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 12px; box-shadow: 0 10px 18px -8px rgba(90,40,140,0.3); }
+        .btn-pdf-all:hover { background: #5d3578; transform: scale(1.01); }
         .btn-sync { background: #2a6b96; color: white; border: none; padding: 12px 26px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 8px; }
         .btn-sync:hover { background: #1e4a6d; }
         .btn-secondary { background: white; border: 1.5px solid #b8cfdf; color: #1e4a6d; padding: 12px 26px; border-radius: 40px; font-weight: 500; cursor: pointer; transition: 0.15s; }
         .btn-secondary:hover { background: #e7f0f8; }
         
-        /* NEW BUTTON STYLES */
         .btn-add { background: #1b6b3f; color: white; border: none; padding: 12px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 8px; }
         .btn-add:hover { background: #155231; }
         .btn-remove { background: #b33a3a; color: white; border: none; padding: 12px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; gap: 8px; }
@@ -166,7 +167,7 @@
                 <!-- Populated via JavaScript -->
             </select>
             <button id="addAcBtn" class="btn-add">➕ Add New AC</button>
-            <button id="removeAcBtn" class="btn-remove">➖ Remove AC</button> <!-- NEW REMOVE BUTTON -->
+            <button id="removeAcBtn" class="btn-remove">➖ Remove AC</button>
             <img src="chub-logo.png" alt="CHUB Logo" class="chub-logo" onerror="this.style.display='none'">
         </div>
 
@@ -271,6 +272,8 @@
 
         <div class="action-buttons">
             <button class="btn-pdf" id="pdfBtn"><span>📄</span> Export Current as PDF</button>
+            <button class="btn-pdf-all" id="historyPdfBtn"><span>📚</span> Download All PMs (PDF)</button>
+            <button class="btn-secondary" id="clearHistoryBtn" style="background:#ffe6e6; color:#b33a3a; border-color:#f0b8b8;">🗑️ Clear History</button>
             <button class="btn-sync" id="syncBtn"><span>🔄</span> Sync pending (<span id="pendingCount">0</span>)</button>
             <button class="btn-secondary" id="resetBtn">⟲ Reset form</button>
         </div>
@@ -420,7 +423,8 @@
             // 💾 LOCAL STORAGE FOR AC INVENTORY
             // ============================================================
             const INVENTORY_KEY = 'chub_ac_inventory';
-            
+            const HISTORY_KEY = 'chub_ac_pm_history';
+
             function loadInventory() {
                 try {
                     const saved = localStorage.getItem(INVENTORY_KEY);
@@ -432,6 +436,20 @@
 
             function saveInventory(inv) {
                 localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv));
+            }
+
+            function getHistory() {
+                try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(e) { return []; }
+            }
+
+            function addToHistory(data) {
+                const h = getHistory();
+                h.push(data);
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+            }
+
+            function clearHistory() {
+                localStorage.removeItem(HISTORY_KEY);
             }
 
             let AC_INVENTORY = loadInventory();
@@ -699,6 +717,10 @@
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Sending...';
                 const data = collectFormData();
+                
+                // SAVE TO LOCAL HISTORY
+                addToHistory(data);
+
                 const success = await queueAndSend(data);
                 this.disabled = false;
                 this.innerHTML = orig;
@@ -725,7 +747,21 @@
             document.getElementById('resetBtn').addEventListener('click', () => resetForm(true));
 
             // ============================================================
-            // 📄 PDF EXPORT (Single Record)
+            // 🗑️ CLEAR HISTORY
+            // ============================================================
+            document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+                if (getHistory().length === 0) {
+                    showStatus('📭 No history to clear.', false);
+                    return;
+                }
+                if (confirm('Are you sure you want to delete ALL locally saved PM history? This cannot be undone.')) {
+                    clearHistory();
+                    showStatus('🗑️ Local PM history cleared.', true);
+                }
+            });
+
+            // ============================================================
+            // 📄 EXPORT CURRENT AS PDF (Single Record)
             // ============================================================
             document.getElementById('pdfBtn').addEventListener('click', function() {
                 const data = collectFormData();
@@ -733,7 +769,7 @@
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Preparing PDF...';
 
-                const reportHTML = buildReportHTML(data);
+                const reportHTML = buildReportHTML([data]); // Wrap in array for generic builder
                 const iframe = document.createElement('iframe');
                 iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
                 document.body.appendChild(iframe);
@@ -755,8 +791,48 @@
                 iframe.srcdoc = reportHTML;
             });
 
-            function buildReportHTML(data) {
-                const initials = data.technician.split(' ').map(p => p[0]).join('') + '.';
+            // ============================================================
+            // 📚 DOWNLOAD ALL PMs AS PDF (History)
+            // ============================================================
+            document.getElementById('historyPdfBtn').addEventListener('click', function() {
+                const history = getHistory();
+                if (history.length === 0) {
+                    showStatus('📭 No PM history found. Complete a sign-off first.', false);
+                    return;
+                }
+                this.disabled = true;
+                const orig = this.innerHTML;
+                this.innerHTML = '<span>⏳</span> Preparing ' + history.length + ' PDFs...';
+
+                const reportHTML = buildReportHTML(history);
+                const iframe = document.createElement('iframe');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+                document.body.appendChild(iframe);
+
+                iframe.onload = function() {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                        showStatus('📄 PDF dialog opened — choose "Save as PDF".', true);
+                    } catch(e) {
+                        showStatus('⚠️ Could not open print dialog.', false);
+                    }
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                        document.getElementById('historyPdfBtn').disabled = false;
+                        document.getElementById('historyPdfBtn').innerHTML = orig;
+                    }, 1500);
+                };
+                iframe.srcdoc = reportHTML;
+            });
+
+            // ============================================================
+            // 📄 PDF BUILDER (Handles Single or Multiple Records)
+            // ============================================================
+            function buildReportHTML(records) {
+                // Ensure we always work with an array
+                const dataArray = Array.isArray(records) ? records : [records];
+                
                 const checkList = (ids, allItems) => {
                     return allItems.map((item, idx) => {
                         const isChecked = ids.indexOf(String(idx + 1)) !== -1;
@@ -766,12 +842,92 @@
                     }).join('');
                 };
 
+                let pagesHtml = '';
+                
+                dataArray.forEach((data, index) => {
+                    const initials = data.technician.split(' ').map(p => p[0]).join('') + '.';
+                    
+                    pagesHtml += `
+                    <div class="report-page" style="${index > 0 ? 'page-break-before: always;' : ''}">
+                        <div class="header">
+                          <div>
+                            <h1>❄️ CHUB AC Fleet — Preventive Maintenance Report</h1>
+                            <div class="sub">Site: CHUB · Split Units · PM Checklist</div>
+                          </div>
+                          <div class="meta">
+                            <div><strong>Work date:</strong> ${data.workDate}</div>
+                            <div><strong>Technician:</strong> ${data.technician}</div>
+                            <div><strong>Generated:</strong> ${data.generatedAt}</div>
+                          </div>
+                        </div>
+
+                        <div class="gen-banner">
+                          <div class="gen-name">${data.acTag} — ${data.acLocation}</div>
+                          <div class="gen-sub">${data.acBrand} · ${data.acModel} · SN: ${data.acSerial}</div>
+                        </div>
+
+                        <div class="section-title">🌬️ Filters, Coils & Airflow</div>
+                        <div class="rating-tag">Condition: ${data.airflowRating}</div>
+                        <ul class="check-list">
+                        ${checkList(data.airflowItems.split('|'), [
+                            'Inspect, clean, or replace filters',
+                            'Clean indoor evaporator coil',
+                            'Clean outdoor condenser coil',
+                            'Check blower motor and wheel',
+                            'Verify proper airflow across unit'
+                        ])}
+                        </ul>
+                        ${data.airflowRemark !== '—' ? '<div class="remark-box">📝 ' + data.airflowRemark + '</div>' : ''}
+
+                        <div class="section-title">⚡ Electrical & Refrigerant</div>
+                        <div class="rating-tag">Status: ${data.electricalRating}</div>
+                        <ul class="check-list">
+                        ${checkList(data.electricalItems.split('|'), [
+                            'Verify correct refrigerant charge (superheat/subcooling)',
+                            'Tighten and inspect electrical connections',
+                            'Test relays, contactors, and capacitors',
+                            'Measure compressor and fan motor amps',
+                            'Inspect wiring for frays or heat damage'
+                        ])}
+                        </ul>
+                        ${data.electricalRemark !== '—' ? '<div class="remark-box">📝 ' + data.electricalRemark + '</div>' : ''}
+
+                        <div class="section-title">💧 Drainage, Controls & Performance</div>
+                        <div class="rating-tag">Performance: ${data.drainageRating}</div>
+                        <ul class="check-list">
+                        ${checkList(data.drainageItems.split('|'), [
+                            'Clear condensate drain line and pan',
+                            'Check thermostat calibration and controls',
+                            'Measure supply/return air temperatures',
+                            'Verify overall system efficiency',
+                            'Inspect ductwork for leaks (visible)'
+                        ])}
+                        </ul>
+                        ${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainageRemark + '</div>' : ''}
+
+                        <div class="signoff-block">
+                          <div>
+                            <div style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:#5b7b96; font-weight:700; margin-bottom:4px;">Signed off by</div>
+                            <div class="tech-name">${data.technician}</div>
+                            <div style="font-size:0.82rem; color:#3a6583;">CHUB Site · Work date: ${data.workDate}</div>
+                          </div>
+                          <div class="signature">${initials}</div>
+                        </div>
+
+                        <div class="footer">
+                          This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
+                        </div>
+                    </div>
+                    `;
+                });
+
                 return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>CHUB AC PM Report</title>
 <style>
 @page { size: A4; margin: 10mm 10mm; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; padding: 0 4px; font-size: 10pt; line-height: 1.35; }
+.report-page { margin-bottom: 0; }
 .header { border-bottom: 3px solid #1e4a6d; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
 .header h1 { font-size: 1.25rem; color: #12405e; letter-spacing: -0.3px; }
 .header .sub { font-size: 0.85rem; color: #3a6583; margin-top: 3px; }
@@ -789,74 +945,7 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 .signature { font-family: 'Segoe UI', cursive; font-size: 1.1rem; color: #1e4a6d; border-bottom: 2px dashed #9cb9d0; padding: 0 16px 3px 16px; }
 .footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #d4e3ef; text-align: center; font-size: 0.7rem; color: #5b7b96; page-break-before: avoid; }
 </style></head><body>
-<div class="header">
-  <div>
-    <h1>❄️ CHUB AC Fleet — Preventive Maintenance Report</h1>
-    <div class="sub">Site: CHUB · Split Units · PM Checklist</div>
-  </div>
-  <div class="meta">
-    <div><strong>Work date:</strong> ${data.workDate}</div>
-    <div><strong>Technician:</strong> ${data.technician}</div>
-    <div><strong>Generated:</strong> ${data.generatedAt}</div>
-  </div>
-</div>
-
-<div class="gen-banner">
-  <div class="gen-name">${data.acTag} — ${data.acLocation}</div>
-  <div class="gen-sub">${data.acBrand} · ${data.acModel} · SN: ${data.acSerial}</div>
-</div>
-
-<div class="section-title">🌬️ Filters, Coils & Airflow</div>
-<div class="rating-tag">Condition: ${data.airflowRating}</div>
-<ul class="check-list">
-${checkList(data.airflowItems.split('|'), [
-    'Inspect, clean, or replace filters',
-    'Clean indoor evaporator coil',
-    'Clean outdoor condenser coil',
-    'Check blower motor and wheel',
-    'Verify proper airflow across unit'
-])}
-</ul>
-${data.airflowRemark !== '—' ? '<div class="remark-box">📝 ' + data.airflowRemark + '</div>' : ''}
-
-<div class="section-title">⚡ Electrical & Refrigerant</div>
-<div class="rating-tag">Status: ${data.electricalRating}</div>
-<ul class="check-list">
-${checkList(data.electricalItems.split('|'), [
-    'Verify correct refrigerant charge (superheat/subcooling)',
-    'Tighten and inspect electrical connections',
-    'Test relays, contactors, and capacitors',
-    'Measure compressor and fan motor amps',
-    'Inspect wiring for frays or heat damage'
-])}
-</ul>
-${data.electricalRemark !== '—' ? '<div class="remark-box">📝 ' + data.electricalRemark + '</div>' : ''}
-
-<div class="section-title">💧 Drainage, Controls & Performance</div>
-<div class="rating-tag">Performance: ${data.drainageRating}</div>
-<ul class="check-list">
-${checkList(data.drainageItems.split('|'), [
-    'Clear condensate drain line and pan',
-    'Check thermostat calibration and controls',
-    'Measure supply/return air temperatures',
-    'Verify overall system efficiency',
-    'Inspect ductwork for leaks (visible)'
-])}
-</ul>
-${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainageRemark + '</div>' : ''}
-
-<div class="signoff-block">
-  <div>
-    <div style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:#5b7b96; font-weight:700; margin-bottom:4px;">Signed off by</div>
-    <div class="tech-name">${data.technician}</div>
-    <div style="font-size:0.82rem; color:#3a6583;">CHUB Site · Work date: ${data.workDate}</div>
-  </div>
-  <div class="signature">${initials}</div>
-</div>
-
-<div class="footer">
-  This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
-</div>
+${pagesHtml}
 </body></html>`;
             }
 
@@ -948,7 +1037,7 @@ ${data.drainageRemark !== '—' ? '<div class="remark-box">📝 ' + data.drainag
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=6') // Updated to v6 to force refresh
+                navigator.serviceWorker.register('sw.js?v=7') // Updated to v7 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
