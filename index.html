@@ -377,7 +377,7 @@
     <script>
         (function() {
             // 🔗 REPLACE THIS WITH YOUR NEW GOOGLE APPS SCRIPT URL
-            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzq9Np0rhHJl0W9T4IhMaazb_5JHyUBfYmhWMLL2ny3HuQtRE-XkFZFcRskvHUA9Q6D/exec';
+            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/YOUR_NEW_SCRIPT_ID/exec';
 
             // ============================================================
             // 🔐 TECHNICIAN PINs
@@ -766,7 +766,6 @@
                 this.innerHTML = '<span>⏳</span> Fetching from Cloud...';
 
                 try {
-                    // Fetch data from Google Sheet
                     const res = await fetch(GOOGLE_SHEET_URL, { method: 'GET' });
                     const json = await res.json();
                     
@@ -809,7 +808,7 @@
             });
 
             // ============================================================
-            // 📄 PDF BUILDER (Handles Single or Multiple Records)
+            // 📄 PDF BUILDER (With CHUB Header & Footer)
             // ============================================================
             function buildReportHTML(records) {
                 const dataArray = Array.isArray(records) ? records : [records];
@@ -830,9 +829,15 @@
                     
                     pagesHtml += `
                     <div class="report-page" style="${index > 0 ? 'page-break-before: always;' : ''}">
-                        <div class="header">
+                        <!-- HEADER (Image 2) -->
+                        <div class="header-img">
+                            <img src="chub-logo.png" alt="CHUB Logo" style="height: 55px; object-fit: contain;">
+                            <span class="domain">chub.rw</span>
+                        </div>
+
+                        <div class="header" style="margin-top: 15px;">
                           <div>
-                            <h1>❄️ CHUB AC Fleet — Preventive Maintenance Report</h1>
+                            <h1>❄️ AC Fleet — Preventive Maintenance Report</h1>
                             <div class="sub">Site: CHUB · Split Units · PM Checklist</div>
                           </div>
                           <div class="meta">
@@ -895,8 +900,9 @@
                           <div class="signature">${initials}</div>
                         </div>
 
-                        <div class="footer">
-                          This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
+                        <!-- FOOTER (Image 1) -->
+                        <div class="footer-img">
+                            <span>P.O Box: 254 Butare</span> | <span>Email: info@chub.rw</span> | <span>Hotline: 2030</span>
                         </div>
                     </div>
                     `;
@@ -905,10 +911,19 @@
                 return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>CHUB AC PM Report</title>
 <style>
-@page { size: A4; margin: 10mm 10mm; }
+@page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; padding: 0 4px; font-size: 10pt; line-height: 1.35; }
-.report-page { margin-bottom: 0; }
+
+/* NEW HEADER & FOOTER STYLES */
+.header-img { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #6a8db0; padding-bottom: 10px; margin-bottom: 15px; }
+.header-img img { height: 55px; object-fit: contain; }
+.header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
+
+.footer-img { position: fixed; bottom: 0; left: 0; right: 0; background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
+
+/* PAGE BREAK HANDLING */
+.report-page { margin-bottom: 0; page-break-inside: avoid; }
 .header { border-bottom: 3px solid #1e4a6d; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
 .header h1 { font-size: 1.25rem; color: #12405e; letter-spacing: -0.3px; }
 .header .sub { font-size: 0.85rem; color: #3a6583; margin-top: 3px; }
@@ -924,7 +939,14 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 .signoff-block { margin-top: 14px; padding: 12px 16px; background: #f0f6fc; border-radius: 10px; border: 1px solid #cfe0ee; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; page-break-inside: avoid; }
 .signoff-block .tech-name { font-size: 1.05rem; font-weight: 700; color: #0a2a3f; }
 .signature { font-family: 'Segoe UI', cursive; font-size: 1.1rem; color: #1e4a6d; border-bottom: 2px dashed #9cb9d0; padding: 0 16px 3px 16px; }
-.footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #d4e3ef; text-align: center; font-size: 0.7rem; color: #5b7b96; page-break-before: avoid; }
+
+/* HIDE BROWSER DEFAULT HEADERS/FOOTERS (Image 3) */
+@media print {
+    @page { margin: 0; }
+    body { margin: 15mm 15mm 25mm 15mm; }
+    .header-img { position: fixed; top: 0; left: 0; right: 0; }
+    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; }
+}
 </style></head><body>
 ${pagesHtml}
 </body></html>`;
@@ -1018,7 +1040,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=9') // Updated to v9 to force refresh
+                navigator.serviceWorker.register('sw.js?v=10') // Updated to v10 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
