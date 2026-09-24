@@ -272,8 +272,7 @@
 
         <div class="action-buttons">
             <button class="btn-pdf" id="pdfBtn"><span>📄</span> Export Current as PDF</button>
-            <button class="btn-pdf-all" id="historyPdfBtn"><span>📚</span> Download All PMs (PDF)</button>
-            <button class="btn-secondary" id="clearHistoryBtn" style="background:#ffe6e6; color:#b33a3a; border-color:#f0b8b8;">🗑️ Clear History</button>
+            <button class="btn-pdf-all" id="historyPdfBtn"><span>📚</span> Download All PMs (Cloud)</button>
             <button class="btn-sync" id="syncBtn"><span>🔄</span> Sync pending (<span id="pendingCount">0</span>)</button>
             <button class="btn-secondary" id="resetBtn">⟲ Reset form</button>
         </div>
@@ -392,7 +391,7 @@
             };
 
             // ============================================================
-            // 📋 DEFAULT AC INVENTORY (from your images)
+            // 📋 DEFAULT AC INVENTORY
             // ============================================================
             const DEFAULT_AC_INVENTORY = [
                 { tag: 'CHUB/MCH NBM/262', dept: 'Laboratory', loc: 'Stock Consumables', type: 'Split', brand: 'Kanion', model: 'KCC-18R4100CF', serial: '340B408220308280170001' },
@@ -420,11 +419,9 @@
             ];
 
             // ============================================================
-            // 💾 LOCAL STORAGE FOR AC INVENTORY
+            // 💾 LOCAL STORAGE
             // ============================================================
-            // UPDATED KEY (v2) to force browser to load the corrected tags
             const INVENTORY_KEY = 'chub_ac_inventory_v2';
-            const HISTORY_KEY = 'chub_ac_pm_history';
 
             function loadInventory() {
                 try {
@@ -437,20 +434,6 @@
 
             function saveInventory(inv) {
                 localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv));
-            }
-
-            function getHistory() {
-                try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(e) { return []; }
-            }
-
-            function addToHistory(data) {
-                const h = getHistory();
-                h.push(data);
-                localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
-            }
-
-            function clearHistory() {
-                localStorage.removeItem(HISTORY_KEY);
             }
 
             let AC_INVENTORY = loadInventory();
@@ -718,9 +701,6 @@
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Sending...';
                 const data = collectFormData();
-                
-                addToHistory(data);
-
                 const success = await queueAndSend(data);
                 this.disabled = false;
                 this.innerHTML = orig;
@@ -745,20 +725,6 @@
             }
 
             document.getElementById('resetBtn').addEventListener('click', () => resetForm(true));
-
-            // ============================================================
-            // 🗑️ CLEAR HISTORY
-            // ============================================================
-            document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-                if (getHistory().length === 0) {
-                    showStatus('📭 No history to clear.', false);
-                    return;
-                }
-                if (confirm('Are you sure you want to delete ALL locally saved PM history? This cannot be undone.')) {
-                    clearHistory();
-                    showStatus('🗑️ Local PM history cleared.', true);
-                }
-            });
 
             // ============================================================
             // 📄 EXPORT CURRENT AS PDF (Single Record)
@@ -792,38 +758,54 @@
             });
 
             // ============================================================
-            // 📚 DOWNLOAD ALL PMs AS PDF (History)
+            // 📚 DOWNLOAD ALL PMs AS PDF (FROM GOOGLE SHEET)
             // ============================================================
-            document.getElementById('historyPdfBtn').addEventListener('click', function() {
-                const history = getHistory();
-                if (history.length === 0) {
-                    showStatus('📭 No PM history found. Complete a sign-off first.', false);
-                    return;
-                }
+            document.getElementById('historyPdfBtn').addEventListener('click', async function() {
                 this.disabled = true;
                 const orig = this.innerHTML;
-                this.innerHTML = '<span>⏳</span> Preparing ' + history.length + ' PDFs...';
+                this.innerHTML = '<span>⏳</span> Fetching from Cloud...';
 
-                const reportHTML = buildReportHTML(history);
-                const iframe = document.createElement('iframe');
-                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
-                document.body.appendChild(iframe);
-
-                iframe.onload = function() {
-                    try {
-                        iframe.contentWindow.focus();
-                        iframe.contentWindow.print();
-                        showStatus('📄 PDF dialog opened — choose "Save as PDF".', true);
-                    } catch(e) {
-                        showStatus('⚠️ Could not open print dialog.', false);
+                try {
+                    // Fetch data from Google Sheet
+                    const res = await fetch(GOOGLE_SHEET_URL, { method: 'GET' });
+                    const json = await res.json();
+                    
+                    if (!json.records || json.records.length === 0) {
+                        showStatus('📭 No records found in the Google Sheet.', false);
+                        this.disabled = false;
+                        this.innerHTML = orig;
+                        return;
                     }
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                        document.getElementById('historyPdfBtn').disabled = false;
-                        document.getElementById('historyPdfBtn').innerHTML = orig;
-                    }, 1500);
-                };
-                iframe.srcdoc = reportHTML;
+
+                    this.innerHTML = '<span>⏳</span> Preparing ' + json.records.length + ' PDFs...';
+                    const reportHTML = buildReportHTML(json.records);
+                    
+                    const iframe = document.createElement('iframe');
+                    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+                    document.body.appendChild(iframe);
+
+                    iframe.onload = function() {
+                        try {
+                            iframe.contentWindow.focus();
+                            iframe.contentWindow.print();
+                            showStatus('📄 PDF dialog opened — choose "Save as PDF".', true);
+                        } catch(e) {
+                            showStatus('⚠️ Could not open print dialog.', false);
+                        }
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                            document.getElementById('historyPdfBtn').disabled = false;
+                            document.getElementById('historyPdfBtn').innerHTML = orig;
+                        }, 1500);
+                    };
+                    iframe.srcdoc = reportHTML;
+
+                } catch (err) {
+                    console.error(err);
+                    showStatus('⚠️ Could not load records: ' + err.message, false);
+                    this.disabled = false;
+                    this.innerHTML = orig;
+                }
             });
 
             // ============================================================
@@ -844,7 +826,7 @@
                 let pagesHtml = '';
                 
                 dataArray.forEach((data, index) => {
-                    const initials = data.technician.split(' ').map(p => p[0]).join('') + '.';
+                    const initials = (data.technician || 'HK').split(' ').map(p => p[0]).join('') + '.';
                     
                     pagesHtml += `
                     <div class="report-page" style="${index > 0 ? 'page-break-before: always;' : ''}">
@@ -868,7 +850,7 @@
                         <div class="section-title">🌬️ Filters, Coils & Airflow</div>
                         <div class="rating-tag">Condition: ${data.airflowRating}</div>
                         <ul class="check-list">
-                        ${checkList(data.airflowItems.split('|'), [
+                        ${checkList((data.airflowItems || '').split('|'), [
                             'Inspect, clean, or replace filters',
                             'Clean indoor evaporator coil',
                             'Clean outdoor condenser coil',
@@ -881,7 +863,7 @@
                         <div class="section-title">⚡ Electrical & Refrigerant</div>
                         <div class="rating-tag">Status: ${data.electricalRating}</div>
                         <ul class="check-list">
-                        ${checkList(data.electricalItems.split('|'), [
+                        ${checkList((data.electricalItems || '').split('|'), [
                             'Verify correct refrigerant charge (superheat/subcooling)',
                             'Tighten and inspect electrical connections',
                             'Test relays, contactors, and capacitors',
@@ -894,7 +876,7 @@
                         <div class="section-title">💧 Drainage, Controls & Performance</div>
                         <div class="rating-tag">Performance: ${data.drainageRating}</div>
                         <ul class="check-list">
-                        ${checkList(data.drainageItems.split('|'), [
+                        ${checkList((data.drainageItems || '').split('|'), [
                             'Clear condensate drain line and pan',
                             'Check thermostat calibration and controls',
                             'Measure supply/return air temperatures',
@@ -1036,7 +1018,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=8') // Updated to v8 to force refresh
+                navigator.serviceWorker.register('sw.js?v=9') // Updated to v9 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
