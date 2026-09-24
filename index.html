@@ -322,7 +322,7 @@
     <div class="modal-overlay" id="addAcModal">
         <div class="modal-box">
             <h2>➕ Add New AC Unit</h2>
-            <p>Enter the details of the new air conditioner. It will be saved locally for future use.</p>
+            <p>This AC will be added to <strong>your personal list</strong>. Only you can see it when you log in.</p>
             
             <div class="grid-3-wide" style="grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div class="field-group">
@@ -390,8 +390,11 @@
                 'GATANGANWA Raissa':      '0401'
             };
 
+            // The technician who gets the default AC list (from your images)
+            const DEFAULT_LIST_OWNER = 'Hillaly KUBWIMANA';
+
             // ============================================================
-            // 📋 DEFAULT AC INVENTORY
+            // 📋 DEFAULT AC INVENTORY (only given to DEFAULT_LIST_OWNER)
             // ============================================================
             const DEFAULT_AC_INVENTORY = [
                 { tag: 'CHUB/MCH NBM/262', dept: 'Laboratory', loc: 'Stock Consumables', type: 'Split', brand: 'Kanion', model: 'KCC-18R4100CF', serial: '340B408220308280170001' },
@@ -419,24 +422,39 @@
             ];
 
             // ============================================================
-            // 💾 LOCAL STORAGE
+            // 💾 PER-TECHNICIAN LOCAL STORAGE
             // ============================================================
-            const INVENTORY_KEY = 'chub_ac_inventory_v2';
+            // Each technician has his own inventory key: chub_ac_inventory_v3_<name>
+            const INVENTORY_KEY_PREFIX = 'chub_ac_inventory_v3_';
 
-            function loadInventory() {
+            function getInventoryKey(techName) {
+                return INVENTORY_KEY_PREFIX + (techName || 'default').replace(/\s+/g, '_');
+            }
+
+            function loadInventoryForTech(techName) {
+                if (!techName) return [];
                 try {
-                    const saved = localStorage.getItem(INVENTORY_KEY);
+                    const saved = localStorage.getItem(getInventoryKey(techName));
                     if (saved) return JSON.parse(saved);
-                } catch(e) { console.warn('Failed to load inventory'); }
-                saveInventory(DEFAULT_AC_INVENTORY);
-                return DEFAULT_AC_INVENTORY;
+                } catch(e) { console.warn('Failed to load inventory for', techName); }
+                
+                // First-time login for this technician
+                if (techName === DEFAULT_LIST_OWNER) {
+                    // Give Hillaly the default list from the images
+                    saveInventoryForTech(techName, DEFAULT_AC_INVENTORY);
+                    return DEFAULT_AC_INVENTORY.slice();
+                }
+                // All other technicians start with an empty list
+                return [];
             }
 
-            function saveInventory(inv) {
-                localStorage.setItem(INVENTORY_KEY, JSON.stringify(inv));
+            function saveInventoryForTech(techName, inv) {
+                if (!techName) return;
+                localStorage.setItem(getInventoryKey(techName), JSON.stringify(inv));
             }
 
-            let AC_INVENTORY = loadInventory();
+            // AC_INVENTORY belongs to whoever is currently logged in
+            let AC_INVENTORY = [];
 
             // ============================================================
             // 🛠️ HELPERS
@@ -463,10 +481,10 @@
                 if (AC_INVENTORY.length === 0) {
                     const opt = document.createElement('option');
                     opt.value = '';
-                    opt.textContent = '— No AC Units Available —';
+                    opt.textContent = '— No AC Units in your list —';
                     acSelect.appendChild(opt);
-                    acTitle.textContent = 'No AC Units Added';
-                    acSub.textContent = 'Please add a new AC unit.';
+                    acTitle.textContent = 'No AC Units Yet';
+                    acSub.textContent = 'Click "➕ Add New AC" to start your personal list.';
                     return;
                 }
                 AC_INVENTORY.forEach((ac, index) => {
@@ -480,7 +498,11 @@
 
             function updateAcBanner() {
                 const idx = acSelect.value;
-                if (idx === '' || !AC_INVENTORY[idx]) return;
+                if (idx === '' || !AC_INVENTORY[idx]) {
+                    acTitle.textContent = 'No AC Units Yet';
+                    acSub.textContent = 'Click "➕ Add New AC" to start your personal list.';
+                    return;
+                }
                 const ac = AC_INVENTORY[idx];
                 acTitle.textContent = `${ac.tag} — ${ac.loc}`;
                 acSub.textContent = `${ac.dept} · ${ac.type} · ${ac.brand} · ${ac.model} · SN: ${ac.serial || 'N/A'}`;
@@ -488,7 +510,7 @@
             acSelect.addEventListener('change', updateAcBanner);
 
             // ============================================================
-            // ➕ ADD NEW AC LOGIC
+            // ➕ ADD NEW AC LOGIC (saves to the logged-in technician only)
             // ============================================================
             const addAcModal = document.getElementById('addAcModal');
             document.getElementById('addAcBtn').addEventListener('click', () => {
@@ -512,9 +534,15 @@
                     return;
                 }
 
+                const ownerTech = technicianSelect.value;
+                if (!ownerTech) {
+                    alert('You must be logged in to add an AC unit.');
+                    return;
+                }
+
                 const newAc = { tag, dept, loc, type, brand, model, serial };
                 AC_INVENTORY.push(newAc);
-                saveInventory(AC_INVENTORY);
+                saveInventoryForTech(ownerTech, AC_INVENTORY);
                 
                 renderAcSelector();
                 acSelect.value = AC_INVENTORY.length - 1;
@@ -527,13 +555,14 @@
                 document.getElementById('newAcSerial').value = '';
                 addAcModal.classList.remove('show');
                 
-                showStatus('✅ New AC Unit added successfully!', true);
+                showStatus('✅ New AC Unit added to ' + ownerTech + "'s personal list!", true);
             });
 
             // ============================================================
-            // ➖ REMOVE AC LOGIC
+            // ➖ REMOVE AC LOGIC (only removes from logged-in technician's list)
             // ============================================================
             document.getElementById('removeAcBtn').addEventListener('click', () => {
+                const ownerTech = technicianSelect.value;
                 const idx = acSelect.value;
                 if (idx === '' || !AC_INVENTORY[idx]) {
                     showStatus('⚠️ No AC unit selected to remove.', false);
@@ -541,21 +570,21 @@
                 }
 
                 const ac = AC_INVENTORY[idx];
-                const confirmMsg = `Are you sure you want to remove:\n\n${ac.tag} — ${ac.loc}\n(${ac.brand} ${ac.model})\n\nThis action cannot be undone.`;
+                const confirmMsg = `Are you sure you want to remove:\n\n${ac.tag} — ${ac.loc}\n(${ac.brand} ${ac.model})\n\nThis will remove it from YOUR personal list only.`;
                 
                 if (confirm(confirmMsg)) {
                     AC_INVENTORY.splice(idx, 1);
-                    saveInventory(AC_INVENTORY);
+                    saveInventoryForTech(ownerTech, AC_INVENTORY);
                     renderAcSelector();
                     
                     if (AC_INVENTORY.length === 0) {
-                        acTitle.textContent = 'No AC Units Added';
-                        acSub.textContent = 'Please add a new AC unit.';
+                        acTitle.textContent = 'No AC Units Yet';
+                        acSub.textContent = 'Click "➕ Add New AC" to start your personal list.';
                     } else {
                         acSelect.selectedIndex = 0;
                         updateAcBanner();
                     }
-                    showStatus('🗑️ AC Unit removed successfully!', true);
+                    showStatus('🗑️ AC Unit removed from your personal list!', true);
                 }
             });
 
@@ -657,6 +686,9 @@
             function collectFormData() {
                 const idx = acSelect.value;
                 const ac = AC_INVENTORY[idx];
+                if (!ac) {
+                    return null;
+                }
                 const now = new Date();
                 const timestamp = now.toLocaleString('en-GB', { hour12: false, day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                 
@@ -697,10 +729,14 @@
             // ✍️ SIGN-OFF
             // ============================================================
             document.getElementById('signOffBtn').addEventListener('click', async function() {
+                const data = collectFormData();
+                if (!data) {
+                    showStatus('⚠️ Please add an AC unit to your list before signing off.', false);
+                    return;
+                }
                 this.disabled = true;
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Sending...';
-                const data = collectFormData();
                 const success = await queueAndSend(data);
                 this.disabled = false;
                 this.innerHTML = orig;
@@ -731,6 +767,10 @@
             // ============================================================
             document.getElementById('pdfBtn').addEventListener('click', function() {
                 const data = collectFormData();
+                if (!data) {
+                    showStatus('⚠️ Please add an AC unit to your list first.', false);
+                    return;
+                }
                 this.disabled = true;
                 const orig = this.innerHTML;
                 this.innerHTML = '<span>⏳</span> Preparing PDF...';
@@ -829,16 +869,11 @@
             });
 
             // ============================================================
-            // 📄 PDF BUILDER (With CHUB Header & Footer)
-            // ============================================================
-                       // ============================================================
-                       // ============================================================
             // 📄 PDF BUILDER (With Repeating CHUB Header & Footer)
             // ============================================================
             function buildReportHTML(records) {
                 const dataArray = Array.isArray(records) ? records : [records];
                 
-                // ✅ SAFE SPLIT HELPER — fixes ".split is not a function" crash
                 function safeSplit(val, sep) {
                     if (val === null || val === undefined) return [];
                     if (Array.isArray(val)) {
@@ -849,7 +884,6 @@
                     return String(val).split(sep).map(v => v.trim()).filter(Boolean);
                 }
                 
-                // Helper to clean up the date format
                 function formatDateForPDF(dateVal) {
                     if (!dateVal) return '—';
                     if (Array.isArray(dateVal)) dateVal = dateVal[0];
@@ -945,7 +979,6 @@
                           <div class="signature">${initials}</div>
                         </div>
 
-                        <!-- Small text footer on each page -->
                         <div class="footer-text-block">
                             This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
                         </div>
@@ -960,7 +993,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: white; font-size: 10pt; line-height: 1.35; }
 
-/* --- CONTENT STYLES --- */
 .header { border-bottom: 3px solid #1e4a6d; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
 .header h1 { font-size: 1.25rem; color: #12405e; letter-spacing: -0.3px; }
 .header .sub { font-size: 0.85rem; color: #3a6583; margin-top: 3px; }
@@ -978,7 +1010,6 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 .signature { font-family: 'Segoe UI', cursive; font-size: 1.1rem; color: #1e4a6d; border-bottom: 2px dashed #9cb9d0; padding: 0 16px 3px 16px; }
 .footer-text-block { text-align: center; font-size: 9px; color: #5b7b96; margin-top: 15px; padding-top: 5px; border-top: 1px solid #d4e3ef; }
 
-/* --- FIXED HEADER & FOOTER FOR PRINT --- */
 .header-img { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #6a8db0; padding-bottom: 10px; margin-bottom: 15px; }
 .header-img img { height: 55px; object-fit: contain; }
 .header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
@@ -986,22 +1017,12 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 
 @media print {
     @page { margin: 0; }
-    /* Give the body padding to make room for the fixed header and footer */
     body { margin: 0; padding: 26mm 15mm 24mm 15mm; }
-    
-    /* Fix the header to the top of every page */
     .header-img { position: fixed; top: 0; left: 0; right: 0; height: 22mm; background: white; padding: 4mm 15mm 0 15mm; z-index: 9999; border-bottom: 2px solid #6a8db0; margin-bottom: 0; }
-    
-    /* Fix the footer to the bottom of every page */
     .footer-img { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; padding: 0 15mm 4mm 15mm; z-index: 9999; }
-    
     .footer-bar { padding: 6px; font-size: 10px; }
-    
-    /* Force each report onto its own page, but NOT the last one */
     .report-page { page-break-inside: avoid; page-break-after: always; height: 100%; }
     .report-page:last-child { page-break-after: auto; }
-    
-    /* Tighter spacing for print to ensure one page fits */
     .header { margin-bottom: 8px; padding-bottom: 6px; }
     .header h1 { font-size: 1.1rem; }
     .header .meta { font-size: 0.75rem; }
@@ -1018,16 +1039,13 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 }
 </style></head><body>
 
-<!-- FIXED HEADER (REPEATS ON EVERY PAGE) -->
 <div class="header-img">
     <img src="chub-logo.png" alt="CHUB Logo" style="height: 55px; object-fit: contain;">
     <span class="domain">chub.rw</span>
 </div>
 
-<!-- DYNAMIC PAGES CONTENT -->
 ${pagesHtml}
 
-<!-- FIXED FOOTER (REPEATS ON EVERY PAGE) -->
 <div class="footer-img">
     <div class="footer-bar">
         <span>P.O Box: 254 Butare</span> | <span>Email: info@chub.rw</span> | <span>Hotline: 2030</span>
@@ -1036,6 +1054,7 @@ ${pagesHtml}
 
 </body></html>`;
             }
+
             // ============================================================
             // 🔐 PIN AUTHENTICATION
             // ============================================================
@@ -1056,11 +1075,17 @@ ${pagesHtml}
                 if (technicianSelect) technicianSelect.value = name;
                 document.getElementById('loggedInUserName').textContent = name;
                 document.getElementById('lockedTechName').textContent = name;
+
+                // ⭐ NEW: Load this technician's personal AC inventory
+                AC_INVENTORY = loadInventoryForTech(name);
+                renderAcSelector();
+
                 updateTechnicianDisplay();
                 document.getElementById('loginModal').classList.remove('show');
             }
             function lockApp() {
                 clearSession();
+                AC_INVENTORY = [];
                 document.getElementById('loginModal').classList.add('show');
                 document.getElementById('loginPinInput').value = '';
                 document.getElementById('loginError').textContent = '';
@@ -1088,7 +1113,8 @@ ${pagesHtml}
                     
                     saveSession(name);
                     unlockApp(name);
-                    showStatus('✅ Welcome, ' + name + '!', true);
+                    const acCount = AC_INVENTORY.length;
+                    showStatus('✅ Welcome, ' + name + '! You have ' + acCount + ' AC unit(s) in your list.', true);
                 });
             }
 
@@ -1104,18 +1130,19 @@ ${pagesHtml}
             });
 
             const existingSession = loadSession();
-            if (existingSession && TECHNICIAN_PINS[existingSession]) { unlockApp(existingSession); } else { lockApp(); }
+            if (existingSession && TECHNICIAN_PINS[existingSession]) { 
+                unlockApp(existingSession); 
+            } else { 
+                lockApp(); 
+            }
 
             // ============================================================
             // 🚀 INIT
             // ============================================================
             document.getElementById('workDate').addEventListener('change', updateWorkDateDisplay);
             document.getElementById('syncBtn').addEventListener('click', flushQueue);
-            document.getElementById('logoutBtn').addEventListener('click', () => { clearSession(); lockApp(); });
 
             setAutoWorkDate();
-            renderAcSelector();
-            updateTechnicianDisplay();
             updatePendingCount();
             setTimeout(() => { if (getQueue().length > 0) flushQueue(); }, 1200);
 
@@ -1124,7 +1151,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=13') // Updated to v13 to force refresh
+                navigator.serviceWorker.register('sw.js?v=15') // Updated to v15 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
