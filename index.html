@@ -272,7 +272,7 @@
 
         <div class="action-buttons">
             <button class="btn-pdf" id="pdfBtn"><span>📄</span> Export Current as PDF</button>
-            <button class="btn-pdf-all" id="historyPdfBtn"><span>📚</span> Download All PMs (Cloud)</button>
+            <button class="btn-pdf-all" id="historyPdfBtn"><span>📚</span> Download My PMs (Cloud)</button>
             <button class="btn-sync" id="syncBtn"><span>🔄</span> Sync pending (<span id="pendingCount">0</span>)</button>
             <button class="btn-secondary" id="resetBtn">⟲ Reset form</button>
         </div>
@@ -377,7 +377,7 @@
     <script>
         (function() {
             // 🔗 REPLACE THIS WITH YOUR NEW GOOGLE APPS SCRIPT URL
-            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzq9Np0rhHJl0W9T4IhMaazb_5JHyUBfYmhWMLL2ny3HuQtRE-XkFZFcRskvHUA9Q6D/exec';
+            const GOOGLE_SHEET_URL = 'https://script.google.com/macros/library/d/1oHYehcloktv5bIccpoQi3z10Vn78LSSi3rXiAxDTbgJeX34qnmX7-au_/2';
 
             // ============================================================
             // 🔐 TECHNICIAN PINs
@@ -758,7 +758,7 @@
             });
 
             // ============================================================
-            // 📚 DOWNLOAD ALL PMs AS PDF (FROM GOOGLE SHEET)
+            // 📚 DOWNLOAD MY PMs AS PDF (FROM GOOGLE SHEET, FILTERED BY USER)
             // ============================================================
             document.getElementById('historyPdfBtn').addEventListener('click', async function() {
                 this.disabled = true;
@@ -766,6 +766,14 @@
                 this.innerHTML = '<span>⏳</span> Fetching from Cloud...';
 
                 try {
+                    const currentTech = technicianSelect.value;
+                    if (!currentTech) {
+                        showStatus('⚠️ You must be logged in to download your PMs.', false);
+                        this.disabled = false;
+                        this.innerHTML = orig;
+                        return;
+                    }
+
                     const res = await fetch(GOOGLE_SHEET_URL, { method: 'GET' });
                     const json = await res.json();
                     
@@ -776,8 +784,18 @@
                         return;
                     }
 
-                    this.innerHTML = '<span>⏳</span> Preparing ' + json.records.length + ' PDFs...';
-                    const reportHTML = buildReportHTML(json.records);
+                    // FILTER: Only keep records belonging to the logged-in technician
+                    const myRecords = json.records.filter(r => r.technician === currentTech);
+
+                    if (myRecords.length === 0) {
+                        showStatus('📭 No PM history found for ' + currentTech + ' yet.', false);
+                        this.disabled = false;
+                        this.innerHTML = orig;
+                        return;
+                    }
+
+                    this.innerHTML = '<span>⏳</span> Preparing ' + myRecords.length + ' PDFs...';
+                    const reportHTML = buildReportHTML(myRecords);
                     
                     const iframe = document.createElement('iframe');
                     iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
@@ -900,9 +918,9 @@
                           <div class="signature">${initials}</div>
                         </div>
 
-                        <!-- FOOTER (Image 1) -->
-                        <div class="footer-img">
-                            <span>P.O Box: 254 Butare</span> | <span>Email: info@chub.rw</span> | <span>Hotline: 2030</span>
+                        <!-- FOOTER TEXT (Image 1) -->
+                        <div class="footer-text-block">
+                            This report was generated automatically from the CHUB AC Fleet Preventive Maintenance System · ${data.generatedAt}
                         </div>
                     </div>
                     `;
@@ -920,7 +938,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a2e45; background: w
 .header-img img { height: 55px; object-fit: contain; }
 .header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
 
-.footer-img { background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
+.footer-text-block { text-align: center; font-size: 9px; color: #5b7b96; margin-top: 15px; padding-top: 5px; border-top: 1px solid #d4e3ef; }
 
 /* PAGE BREAK HANDLING */
 .report-page { margin-bottom: 0; page-break-inside: avoid; }
@@ -943,14 +961,24 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 /* HIDE BROWSER DEFAULT HEADERS/FOOTERS (Image 3) */
 @media print {
     @page { margin: 0; }
-    body { margin: 0; padding: 25mm 15mm 25mm 15mm; } /* Push content below fixed header */
+    body { margin: 0; padding: 25mm 15mm 35mm 15mm; } /* Push content below fixed header and above fixed footer */
     .header-img { position: fixed; top: 0; left: 0; right: 0; height: 20mm; background: white; padding: 5mm 15mm 0 15mm; z-index: 1000; }
-    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; height: 15mm; background: #6a8db0; padding: 4mm 15mm; z-index: 1000; }
+    
+    /* FIXED FOOTER WITH TEXT AND BLUE BAR */
+    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 0 15mm 5mm 15mm; z-index: 1000; }
+    .footer-text-block { margin-top: 0; margin-bottom: 5px; border-top: none; font-size: 8px; }
+    .footer-bar { background: #6a8db0; color: white; padding: 8px; display: flex; justify-content: center; gap: 30px; font-weight: 500; font-size: 11px; }
+    
     .report-page { page-break-inside: avoid; page-break-after: always; }
     .report-page:last-child { page-break-after: auto; }
 }
 </style></head><body>
 ${pagesHtml}
+<div class="footer-img">
+    <div class="footer-bar">
+        <span>P.O Box: 254 Butare</span> | <span>Email: info@chub.rw</span> | <span>Hotline: 2030</span>
+    </div>
+</div>
 </body></html>`;
             }
 
@@ -1042,7 +1070,7 @@ ${pagesHtml}
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=11') // Updated to v11 to force refresh
+                navigator.serviceWorker.register('sw.js?v=12') // Updated to v12 to force refresh
                     .then(reg => console.log('✅ Service Worker registered:', reg.scope))
                     .catch(err => console.warn('⚠️ Service Worker failed:', err));
             });
