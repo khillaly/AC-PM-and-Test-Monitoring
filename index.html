@@ -832,6 +832,7 @@
             // 📄 PDF BUILDER (With CHUB Header & Footer)
             // ============================================================
                        // ============================================================
+                       // ============================================================
             // 📄 PDF BUILDER (With Repeating CHUB Header & Footer)
             // ============================================================
             function buildReportHTML(records) {
@@ -868,7 +869,7 @@
                         const isChecked = safeIds.indexOf(String(idx + 1)) !== -1;
                         const mark = isChecked ? 'v' : 'x';
                         const color = isChecked ? '#1b6b3f' : '#b33a3a';
-                        return '<li style="padding:4px 0;color:#1f3c54;font-size:0.92rem;"><span style="display:inline-block;width:18px;font-weight:700;color:' + color + ';">' + mark + '</span>' + item + '</li>';
+                        return '<li style="padding:2px 0;color:#1f3c54;font-size:0.85rem;"><span style="display:inline-block;width:18px;font-weight:700;color:' + color + ';">' + mark + '</span>' + item + '</li>';
                     }).join('');
                 };
 
@@ -937,9 +938,9 @@
 
                         <div class="signoff-block">
                           <div>
-                            <div style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.5px; color:#5b7b96; font-weight:700; margin-bottom:4px;">Signed off by</div>
+                            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; color:#5b7b96; font-weight:700; margin-bottom:2px;">Signed off by</div>
                             <div class="tech-name">${data.technician}</div>
-                            <div style="font-size:0.82rem; color:#3a6583;">CHUB Site · Work date: ${formatDateForPDF(data.workDate)}</div>
+                            <div style="font-size:0.8rem; color:#3a6583;">CHUB Site · Work date: ${formatDateForPDF(data.workDate)}</div>
                           </div>
                           <div class="signature">${initials}</div>
                         </div>
@@ -981,22 +982,39 @@ ul.check-list li { padding: 2px 0; color: #1f3c54; font-size: 0.85rem; }
 .header-img { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #6a8db0; padding-bottom: 10px; margin-bottom: 15px; }
 .header-img img { height: 55px; object-fit: contain; }
 .header-img .domain { font-size: 16px; font-weight: 800; color: #6a8db0; font-style: italic; }
-
 .footer-bar { background: #6a8db0; color: white; text-align: center; padding: 10px; font-size: 11px; display: flex; justify-content: center; gap: 30px; font-weight: 500; }
 
 @media print {
     @page { margin: 0; }
     /* Give the body padding to make room for the fixed header and footer */
-    body { margin: 0; padding: 30mm 15mm 35mm 15mm; }
+    body { margin: 0; padding: 26mm 15mm 24mm 15mm; }
     
     /* Fix the header to the top of every page */
-    .header-img { position: fixed; top: 0; left: 0; right: 0; height: 25mm; background: white; padding: 5mm 15mm 0 15mm; z-index: 9999; border-bottom: 2px solid #6a8db0; margin-bottom: 0; }
+    .header-img { position: fixed; top: 0; left: 0; right: 0; height: 22mm; background: white; padding: 4mm 15mm 0 15mm; z-index: 9999; border-bottom: 2px solid #6a8db0; margin-bottom: 0; }
     
     /* Fix the footer to the bottom of every page */
-    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; padding: 0 15mm 5mm 15mm; z-index: 9999; }
+    .footer-img { position: fixed; bottom: 0; left: 0; right: 0; height: 20mm; background: white; padding: 0 15mm 4mm 15mm; z-index: 9999; }
     
-    .report-page { page-break-inside: avoid; page-break-after: always; }
+    .footer-bar { padding: 6px; font-size: 10px; }
+    
+    /* Force each report onto its own page, but NOT the last one */
+    .report-page { page-break-inside: avoid; page-break-after: always; height: 100%; }
     .report-page:last-child { page-break-after: auto; }
+    
+    /* Tighter spacing for print to ensure one page fits */
+    .header { margin-bottom: 8px; padding-bottom: 6px; }
+    .header h1 { font-size: 1.1rem; }
+    .header .meta { font-size: 0.75rem; }
+    .gen-banner { padding: 8px 12px; margin-bottom: 8px; }
+    .gen-banner .gen-name { font-size: 1rem; }
+    .section-title { margin: 10px 0 4px 0; font-size: 0.9rem; }
+    ul.check-list li { font-size: 0.8rem; padding: 1px 0; }
+    .rating-tag { font-size: 0.7rem; padding: 1px 8px; margin-bottom: 4px; }
+    .remark-box { padding: 4px 8px; font-size: 0.75rem; margin-bottom: 4px; }
+    .signoff-block { margin-top: 10px; padding: 8px 12px; }
+    .signoff-block .tech-name { font-size: 0.95rem; }
+    .signature { font-size: 1rem; }
+    .footer-text-block { margin-top: 8px; font-size: 8px; padding-top: 4px; }
 }
 </style></head><body>
 
